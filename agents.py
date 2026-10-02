@@ -1,11 +1,6 @@
-```python
 import os
 import streamlit as st
-LLM(
-    model="gemini/gemini-2.5-flash",
-    api_key=api_key,
-    temperature=0.0
-)
+from crewai import Agent, LLM
 
 
 # ============================================================
@@ -14,52 +9,42 @@ LLM(
 
 def get_agent_llm():
     """
-    Create a CrewAI-native Gemini LLM.
+    Create a CrewAI-native LLM using Gemini 2.5 Flash.
 
     IMPORTANT:
-    Do not use LangChain's ChatGoogleGenerativeAI here.
-    CrewAI 1.15.x expects its own LLM object or a supported
-    model string.
+    This intentionally uses CrewAI's native LLM class.
+    Do NOT use ChatGoogleGenerativeAI here.
     """
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # Streamlit Cloud / local secrets fallback
     if not api_key:
         try:
-            api_key = str(
-                st.secrets.get("GEMINI_API_KEY", "")
-            ).strip()
+            api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
         except Exception:
             api_key = ""
 
     if not api_key:
         st.error(
-            "GEMINI_API_KEY was not found. "
-            "Please configure it in Streamlit Secrets or "
-            "your local environment variables."
+            "🔒 GEMINI_API_KEY was not found. "
+            "Please configure it in Streamlit Secrets or the local environment."
         )
         return None
 
     try:
-        llm = LLM(
+        return LLM(
             model="gemini/gemini-2.5-flash",
             api_key=api_key,
             temperature=0.0
         )
 
-        return llm
-
     except Exception as exc:
-        st.error(
-            "CrewAI Gemini LLM initialization failed."
-        )
-        st.exception(exc)
+        st.error(f"Unable to initialize Gemini through CrewAI: {exc}")
         return None
 
 
 # ============================================================
-# AGENT 1 — INCIDENT TRIAGE
+# AGENT 1 — OPERATIONAL TRIAGE
 # ============================================================
 
 def create_triage_agent(llm):
@@ -68,20 +53,19 @@ def create_triage_agent(llm):
         role="Operational Incident Triage Agent",
 
         goal=(
-            "Analyze the user's operational incident description "
-            "and identify the incident type, affected process, "
-            "material or asset, operational risk indicators, "
-            "and important search terms required to locate "
+            "Analyze the user's operational incident and identify the core "
+            "business process, affected material or asset, incident type, "
+            "risk indicators, and precise search terms needed to locate "
             "the applicable SOP evidence."
         ),
 
         backstory=(
-            "You are the frontline operational triage specialist "
-            "for a manufacturing and supply-chain organization. "
-            "You convert an unstructured operational incident into "
-            "clear operational information for downstream agents. "
-            "Never invent facts. If information is missing, identify "
-            "it as unknown rather than guessing."
+            "You are the frontline operational intake specialist for a "
+            "manufacturing and supply-chain organization. You convert "
+            "unstructured incident descriptions into precise operational "
+            "information. You must not invent facts, policies, causes, "
+            "responsibilities, or decisions that are not supported by the "
+            "incident description."
         ),
 
         llm=llm,
@@ -91,7 +75,7 @@ def create_triage_agent(llm):
 
 
 # ============================================================
-# AGENT 2 — SOP COMPLIANCE COMPILER
+# AGENT 2 — SOP COMPLIANCE / ACTION COMPILER
 # ============================================================
 
 def create_compiler_agent(llm):
@@ -100,20 +84,17 @@ def create_compiler_agent(llm):
         role="SOP Compliance and Action Compiler",
 
         goal=(
-            "Convert the supplied SOP evidence into a clear, "
-            "sequential and operationally useful action checklist. "
-            "Every recommended action must be supported by the "
-            "retrieved SOP reference material."
+            "Convert retrieved SOP evidence into a clear, sequential and "
+            "practical operational action checklist while remaining strictly "
+            "grounded in the supplied SOP evidence."
         ),
 
         backstory=(
-            "You are a strict operational compliance specialist. "
-            "You work only with the SOP evidence supplied to you. "
-            "Never invent company policies, procedures, approval "
-            "limits, safety requirements, responsibilities, or "
-            "documentation requirements. If the SOP evidence does "
-            "not establish something, mark it as requiring "
-            "human verification."
+            "You are a strict SOP compliance specialist. You work only with "
+            "the approved SOP evidence supplied to you. You distinguish "
+            "documented requirements from missing information. You never "
+            "invent procedures, approval limits, responsibilities, safety "
+            "requirements, or business rules."
         ),
 
         llm=llm,
@@ -132,19 +113,18 @@ def create_router_agent(llm):
         role="Cross-Functional Department Routing Agent",
 
         goal=(
-            "Map each required operational action to the most "
-            "appropriate responsible department or organizational "
-            "function using the incident information, SOP evidence, "
-            "and preceding agent outputs."
+            "Map every SOP-grounded action to the appropriate responsible "
+            "business function, identify dependencies and required documents, "
+            "and clearly flag responsibilities that require human verification."
         ),
 
         backstory=(
-            "You are an organizational workflow specialist with "
-            "experience in manufacturing, warehouse, quality, "
-            "procurement and logistics operations. Identify the "
-            "most appropriate responsible function for each action. "
-            "Do not assume responsibility when it cannot be verified. "
-            "Mark uncertain assignments as 'Human Verification Required'."
+            "You are an organizational process-routing specialist working "
+            "across Warehouse, Quality, Procurement, Production, Logistics, "
+            "Finance, Legal and other business functions. You assign "
+            "responsibility only when supported by the available evidence. "
+            "If the SOP evidence does not establish ownership, explicitly "
+            "mark the responsibility as 'Human Verification Required'."
         ),
 
         llm=llm,
@@ -163,23 +143,21 @@ def create_automation_agent(llm):
         role="Executive Action Brief and Workflow Preparation Agent",
 
         goal=(
-            "Combine the verified incident analysis, SOP action "
-            "checklist, department responsibilities and source "
-            "references into a concise Executive Action Brief "
-            "prepared for human review and approval."
+            "Assemble the grounded incident analysis, SOP actions, department "
+            "routing, required documentation, decision points and human "
+            "approval requirement into a concise executive operational brief."
         ),
 
         backstory=(
-            "You are a corporate operations documentation specialist. "
-            "Your output must clearly distinguish verified SOP-based "
-            "actions from information requiring human verification. "
-            "The final recommendation must never bypass the mandatory "
-            "human approval gate. You prepare the workflow for review; "
-            "you do not independently authorize or execute it."
+            "You are a corporate operations documentation specialist. You "
+            "prepare controlled action briefs for management review. Your "
+            "output must clearly distinguish facts, SOP-grounded actions, "
+            "missing information, human verification requirements and "
+            "management approval. You do not claim that an action has been "
+            "executed when the system has only prepared a recommendation."
         ),
 
         llm=llm,
         verbose=True,
         allow_delegation=False
     )
-```
