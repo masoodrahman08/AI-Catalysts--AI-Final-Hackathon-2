@@ -5,21 +5,20 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Initialize the zero-drift Gemini engine model for the swarm workers
 def get_agent_llm():
-    api_key = ""
+    # 🔒 DIRECT ENVIRONMENT VARIABLE FALLBACK FOR LOCAL MACHINE TESTING
+    # This completely avoids st.secrets to prevent StreamlitSecretNotFoundError crashes locally
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     
-    # 🔒 AIRTIGHT VAULT CHECK OVERRIDE (Prevents local StreamlitSecretNotFoundError crashes)
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        # If st.secrets is missing locally, silently fall back to terminal environment variables
-        pass
-
+    # If not found in terminal env, check st.secrets (for final deployment on Streamlit Cloud)
     if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "")
+        try:
+            if "GEMINI_API_KEY" in st.secrets:
+                api_key = st.secrets["GEMINI_API_KEY"]
+        except Exception:
+            pass
         
     if not api_key:
-        st.error("🔒 Security Defect: GEMINI_API_KEY not found in secrets vault or local environment variables.")
+        st.error("🔒 Security Defect: GEMINI_API_KEY not found in local environment variables or secrets vault.")
         return None
         
     # Force temperature=0.0 to lock token probability drift variations
