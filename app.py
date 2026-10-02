@@ -1,4 +1,4 @@
-```python
+python
 import collections
 import re
 
@@ -886,4 +886,4 @@ st.caption(
     "Local RAG + CrewAI + Gemini 3.8 Flash | "
     "Human-Governed Workflow"
 )
-```
+
