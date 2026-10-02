@@ -1,9 +1,8 @@
-```python
 from crewai import Task
 
 
 # ============================================================
-# MULTI-AGENT WORKFLOW TASKS
+# CREWAI WORKFLOW TASKS
 # ============================================================
 
 def define_workflow_tasks(
@@ -15,93 +14,88 @@ def define_workflow_tasks(
     context_chunks
 ):
     """
-    Build the sequential four-agent workflow.
+    Build the four sequential CrewAI tasks.
 
     Workflow:
 
         Incident
-            ↓
-        Agent 1 — Triage
-            ↓
-        Agent 2 — SOP Compliance
-            ↓
-        Agent 3 — Department Routing
-            ↓
-        Agent 4 — Executive Action Brief
-            ↓
-        Human Approval
+           ↓
+        Triage
+           ↓
+        SOP Compliance
+           ↓
+        Department Routing
+           ↓
+        Executive Action Brief
     """
 
     # ========================================================
-    # TASK 1 — TRIAGE
+    # TASK 1 — INCIDENT TRIAGE
     # ========================================================
 
     task_1_triage = Task(
         description=(
-            "Analyze the following operational incident:\n\n"
+            "Analyze the following raw operational incident:\n\n"
             f"{incident_description}\n\n"
 
             "Identify:\n"
             "1. Incident type\n"
             "2. Affected process\n"
-            "3. Material, equipment or asset involved\n"
-            "4. Operational risk indicators\n"
-            "5. Important technical/search terms\n"
-            "6. Missing information that requires clarification\n\n"
+            "3. Material, product, equipment or asset involved\n"
+            "4. Observable problem or exception\n"
+            "5. Potential operational risk indicators explicitly stated\n"
+            "6. Important operational entities\n"
+            "7. Precise search terms that should be used to locate "
+            "the applicable SOP evidence\n"
+            "8. Information that is missing or uncertain\n\n"
 
-            "Do not invent facts. "
-            "If information is not available, explicitly state "
-            "that it is unknown."
+            "Do not invent causes, policies, responsibilities or decisions. "
+            "Do not provide a final operational decision."
         ),
 
         expected_output=(
-            "A concise operational triage summary containing the "
-            "incident type, affected process, relevant entities, "
-            "risk indicators, search terms and unknown information."
+            "A structured incident triage containing incident type, "
+            "affected process, relevant entities, search terms and "
+            "unknown or missing information."
         ),
 
         agent=triage_worker
     )
 
-
     # ========================================================
-    # TASK 2 — SOP COMPILATION
+    # TASK 2 — SOP COMPLIANCE
     # ========================================================
 
     task_2_compile = Task(
         description=(
-            "Use the operational triage information from the "
-            "previous task together with the following retrieved "
-            "SOP evidence.\n\n"
+            "Use the incident triage from the previous task together with "
+            "the following locally retrieved SOP evidence:\n\n"
 
-            "================ SOP GROUNDING EVIDENCE ================\n"
-            f"{context_chunks}\n"
-            "==========================================================\n\n"
+            f"{context_chunks}\n\n"
 
-            "Convert the verified SOP evidence into a sequential "
-            "operational action checklist.\n\n"
+            "Create a practical sequential operational checklist.\n\n"
 
             "Rules:\n"
-            "1. Use only information supported by the supplied SOP evidence.\n"
-            "2. Do not create company procedures that are not present.\n"
-            "3. Do not invent approval requirements.\n"
+            "1. Use ONLY the supplied SOP evidence for procedural requirements.\n"
+            "2. Do not invent policies or procedures.\n"
+            "3. Do not invent approval limits.\n"
             "4. Do not invent department responsibilities.\n"
-            "5. Clearly identify any item requiring human verification.\n"
-            "6. Preserve important SOP controls and conditions.\n"
-            "7. Prefer practical actions that frontline employees can follow."
+            "5. Clearly identify information that is not available in the SOP evidence.\n"
+            "6. Where the evidence is insufficient, write "
+            "'Human Verification Required'.\n"
+            "7. Preserve important conditions, limits and exceptions contained "
+            "in the supplied evidence.\n"
+            "8. Each action should be practical and sequential."
         ),
 
         expected_output=(
-            "A numbered SOP-grounded operational action checklist. "
-            "Each action must be traceable to the supplied SOP evidence "
-            "or explicitly marked as requiring human verification."
+            "A numbered SOP-grounded operational action checklist, including "
+            "conditions, required records and clearly identified evidence gaps."
         ),
 
         agent=compiler_worker,
-
         context=[task_1_triage]
     )
-
 
     # ========================================================
     # TASK 3 — DEPARTMENT ROUTING
@@ -109,34 +103,45 @@ def define_workflow_tasks(
 
     task_3_route = Task(
         description=(
-            "Review the SOP-grounded action checklist produced by "
-            "the previous agent.\n\n"
+            "Review the SOP-grounded action checklist produced by the "
+            "previous task.\n\n"
 
-            "For every action:\n"
-            "1. Identify the most appropriate responsible department "
-            "or organizational function.\n"
-            "2. Identify dependencies on other departments.\n"
-            "3. Identify required records or documents when supported "
-            "by the available evidence.\n"
-            "4. Mark responsibility as 'Human Verification Required' "
-            "when it cannot be reliably established.\n\n"
+            "For every action, determine the responsible business function "
+            "ONLY when the responsibility is supported by the incident "
+            "evidence or SOP evidence.\n\n"
 
-            "Do not force every action into a department if the evidence "
-            "does not support the assignment."
+            "Possible functions may include:\n"
+            "- Warehouse\n"
+            "- Quality / QC\n"
+            "- Procurement\n"
+            "- Production\n"
+            "- Logistics\n"
+            "- Finance\n"
+            "- Legal\n"
+            "- Management\n"
+            "- Other function supported by the evidence\n\n"
+
+            "For each action identify:\n"
+            "1. Action\n"
+            "2. Responsible function\n"
+            "3. Dependency, if any\n"
+            "4. Required document or record, if stated\n"
+            "5. Human verification requirement\n\n"
+
+            "If responsibility cannot be established from the available "
+            "evidence, write 'Human Verification Required'. "
+            "Do not guess ownership."
         ),
 
         expected_output=(
-            "A clear task-to-department routing matrix containing "
-            "Action, Responsible Function, Supporting Function, "
-            "Required Document/Record where known, and Verification "
-            "Status."
+            "A clear action-to-department routing matrix showing action, "
+            "responsible function, dependency, required documentation and "
+            "human verification requirements."
         ),
 
         agent=router_worker,
-
         context=[task_2_compile]
     )
-
 
     # ========================================================
     # TASK 4 — EXECUTIVE ACTION BRIEF
@@ -144,41 +149,42 @@ def define_workflow_tasks(
 
     task_4_automate = Task(
         description=(
-            "Prepare the final Executive Action Brief using the "
-            "incident analysis, SOP checklist and department routing "
-            "information from the preceding agents.\n\n"
+            "Prepare the final Executive Action Brief using the previous "
+            "workflow outputs.\n\n"
 
-            "The final brief must contain these sections:\n\n"
+            "The brief must contain these sections:\n\n"
 
             "1. INCIDENT SUMMARY\n"
-            "2. SOP-GROUNDED IMMEDIATE ACTIONS\n"
+            "2. SOP-GROUNDED REQUIRED ACTIONS\n"
             "3. RESPONSIBLE FUNCTIONS\n"
             "4. REQUIRED DOCUMENTS / RECORDS\n"
             "5. DECISION OR DISPOSITION REQUIRED\n"
-            "6. ITEMS REQUIRING HUMAN VERIFICATION\n"
-            "7. SOURCE / SOP REFERENCES\n"
-            "8. HUMAN APPROVAL GATE\n\n"
+            "6. INFORMATION GAPS / HUMAN VERIFICATION\n"
+            "7. VERIFIED SOP EVIDENCE\n"
+            "8. HUMAN-IN-THE-LOOP APPROVAL GATE\n\n"
 
-            "At the end, explicitly state that the action plan is "
-            "prepared for human review and must not be released or "
-            "executed without authorized human approval.\n\n"
+            "The final brief must clearly state that the system prepares "
+            "a recommended operational workflow for human review. "
+            "It must not claim that the workflow has been executed, "
+            "approved or released.\n\n"
 
-            "Do not claim that the AI has independently approved, "
-            "released, executed, purchased, returned, quarantined, "
-            "disposed of, or otherwise committed company resources."
+            "At the top of the approval section include exactly:\n\n"
+            "=== MANDATORY HUMAN-IN-THE-LOOP APPROVAL ===\n\n"
+
+            "The final output must remain concise, practical and suitable "
+            "for management review."
         ),
 
         expected_output=(
-            "A concise, professional Executive Action Brief in "
-            "Markdown format, suitable for review by an authorized "
-            "operations manager."
+            "A concise Executive Action Brief containing the incident "
+            "summary, SOP-grounded actions, responsible functions, "
+            "documents, decision points, evidence gaps, SOP references "
+            "and mandatory human approval gate."
         ),
 
         agent=automation_worker,
-
         context=[task_3_route]
     )
-
 
     return [
         task_1_triage,
@@ -186,4 +192,3 @@ def define_workflow_tasks(
         task_3_route,
         task_4_automate
     ]
-```
