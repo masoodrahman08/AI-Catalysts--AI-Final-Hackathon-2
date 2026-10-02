@@ -1,89 +1,164 @@
+```python
 import os
 import streamlit as st
-from crewai import Agent
-from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Initialize the zero-drift Gemini engine model for the swarm workers
+from crewai import Agent, LLM
+
+
+# ============================================================
+# GEMINI LLM CONFIGURATION
+# ============================================================
+
 def get_agent_llm():
-    # 🔒 DIRECT ENVIRONMENT VARIABLE FALLBACK FOR LOCAL MACHINE TESTING
-    # This completely avoids st.secrets to prevent StreamlitSecretNotFoundError crashes locally
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    
-    # If not found in terminal env, check st.secrets (for final deployment on Streamlit Cloud)
+
+    # --------------------------------------------------------
+    # 1. Local machine environment variable
+    # --------------------------------------------------------
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
+    # --------------------------------------------------------
+    # 2. Streamlit Cloud Secrets fallback
+    # --------------------------------------------------------
     if not api_key:
         try:
-            if "GEMINI_API_KEY" in st.secrets:
-                api_key = st.secrets["GEMINI_API_KEY"]
+            api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
         except Exception:
-            pass
-        
+            api_key = ""
+
+    # --------------------------------------------------------
+    # 3. Security check
+    # --------------------------------------------------------
     if not api_key:
-        st.error("🔒 Security Defect: GEMINI_API_KEY not found in local environment variables or secrets vault.")
+        st.error(
+            "GEMINI_API_KEY was not found. "
+            "Configure it as an environment variable or Streamlit Secret."
+        )
         return None
-        
-    # Force temperature=0.0 to lock token probability drift variations
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash", 
-        google_api_key=api_key,
+
+    # --------------------------------------------------------
+    # 4. CrewAI-native Gemini LLM
+    # --------------------------------------------------------
+    return LLM(
+        model="gemini/gemini-2.5-flash",
+        api_key=api_key,
         temperature=0.0
     )
 
-# Agent 1: Triage and Parsing Node
+
+# ============================================================
+# AGENT 1 — INCIDENT TRIAGE
+# ============================================================
+
 def create_triage_agent(llm):
+
     return Agent(
-        role="Operational Triage and Extraction Specialist",
-        goal="Analyze raw real-world incident logs and extract the absolute target search parameters.",
-        backstory=(
-            "You are the frontline intake node. Your job is to read user problem descriptions "
-            "(e.g., 'received damaged material') and isolate technical keywords, component indices, "
-            "and material IDs without guessing or introducing extraneous details."
+        role="Incident Triage Agent",
+
+        goal=(
+            "Analyze the operational incident description and identify "
+            "the key incident type, affected process, material or asset, "
+            "risk indicators, and search terms required to locate the "
+            "applicable SOP evidence."
         ),
+
+        backstory=(
+            "You are the frontline operational triage specialist. "
+            "You convert an unstructured operational incident into "
+            "structured and precise information for downstream agents. "
+            "Never invent facts. If information is missing, explicitly "
+            "identify it as unknown."
+        ),
+
         llm=llm,
         verbose=True,
         allow_delegation=False
     )
 
-# Agent 2: Checklist Compiler Node
+
+# ============================================================
+# AGENT 2 — SOP COMPLIANCE
+# ============================================================
+
 def create_compiler_agent(llm):
+
     return Agent(
-        role="SOP Checklist Compliance Compiler",
-        goal="Translate raw grounded text reference chunks into an exact sequential checklist mapping.",
-        backstory=(
-            "You are a strict QA auditor. You take the exact text fragments pulled from the corporate "
-            "SOP database by the local retrieval matrix and translate those complex legal/technical rules "
-            "into a clean, numbered, actionable task list for frontline operations."
+        role="SOP Compliance Agent",
+
+        goal=(
+            "Convert the retrieved SOP evidence into a clear, "
+            "sequential and operationally useful action checklist. "
+            "Every recommendation must be supported by the supplied "
+            "reference material."
         ),
+
+        backstory=(
+            "You are a strict operational compliance specialist. "
+            "You work only with the SOP evidence supplied to you. "
+            "Never invent policies, procedures, approval limits, "
+            "safety requirements, or responsibilities."
+        ),
+
         llm=llm,
         verbose=True,
         allow_delegation=False
     )
 
-# Agent 3: Department Router Node
+
+# ============================================================
+# AGENT 3 — DEPARTMENT ROUTING
+# ============================================================
+
 def create_router_agent(llm):
+
     return Agent(
-        role="Cross-Functional Logistics Router",
-        goal="Examine operational checklists and map dependencies cleanly across target departments.",
-        backstory=(
-            "You are an industrial organizational mapping expert. You parse action items and assign clear "
-            "accountability to enterprise departments (e.g., Procurement, Quality Control, Legal, Warehousing), "
-            "ensuring every cross-functional stakeholder is flagged."
+        role="Department Routing Agent",
+
+        goal=(
+            "Map each required action to the appropriate responsible "
+            "department or organizational function based on the "
+            "incident, SOP evidence, and preceding agent outputs."
         ),
+
+        backstory=(
+            "You are an organizational workflow specialist. "
+            "Identify the most appropriate responsible function for "
+            "each action. Do not assume responsibility when it cannot "
+            "be verified. Mark uncertain assignments as "
+            "Human Verification Required."
+        ),
+
         llm=llm,
         verbose=True,
         allow_delegation=False
     )
 
-# Agent 4: Document Automation Node
+
+# ============================================================
+# AGENT 4 — EXECUTIVE ACTION BRIEF
+# ============================================================
+
 def create_automation_agent(llm):
+
     return Agent(
-        role="Corporate Documentation Automation Specialist",
-        goal="Assemble agent maps into a unified, executive compliance brief summary capsule.",
-        backstory=(
-            "You are a high-speed corporate documentation architect. You take the checklist matrices, "
-            "department tags, and reference citations, and format them into an immutable Executive "
-            "Exception Brief ready for human sign-off."
+        role="Executive Action Brief Agent",
+
+        goal=(
+            "Combine the verified incident analysis, SOP action "
+            "checklist, department responsibilities, and source "
+            "references into a concise Executive Action Brief "
+            "prepared for human review and approval."
         ),
+
+        backstory=(
+            "You are a corporate operations documentation specialist. "
+            "Your output must clearly distinguish verified SOP-based "
+            "actions from information requiring human verification. "
+            "The final recommendation must never bypass the mandatory "
+            "human approval gate."
+        ),
+
         llm=llm,
         verbose=True,
         allow_delegation=False
     )
+```
