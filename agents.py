@@ -161,4 +161,3 @@ def create_automation_agent(llm):
         verbose=True,
         allow_delegation=False
     )
-```
