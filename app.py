@@ -1,3 +1,4 @@
+
 import collections
 import re
 
@@ -307,24 +308,30 @@ def build_local_knowledge_base(files):
 
 if uploaded_files:
 
-    if st.button(
-        "🔄 Build Local SOP Knowledge Base",
-        type="primary"
-    ):
+# ============================================================
+# SECTION 1 — SOP UPLOAD
+# ============================================================
 
-        with st.spinner(
-            "Extracting SOP text and building local TF-IDF index..."
-        ):
+st.header("1. 📚 Upload Approved SOP")
 
-            chunks, sources = build_local_knowledge_base(
-                uploaded_files
-            )
+uploaded_files = st.file_uploader(
+    "Upload one or more approved SOP PDF files",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help=(
+        "The system extracts text locally and creates a "
+        "TF-IDF searchable knowledge base."
+    )
+)
 
-            st.session_state.sop_chunks = chunks
-            st.session_state.sop_sources = sources
-            st.session_state.workflow_output = None
-            st.session_state.workflow_approved = False
-            st.session_state.workflow_rejected = False
+# 💡 SAFEGUARD GUARDRAIL: Reset context loops if uploader is cleared by user interaction
+if not uploaded_files and (st.session_state.sop_chunks or st.session_state.sop_sources):
+    st.session_state.sop_chunks = []
+    st.session_state.sop_sources = []
+    st.session_state.retrieved_context = []
+    st.session_state.workflow_output = None
+    st.session_state.workflow_approved = False
+    st.session_state.workflow_rejected = False
 
         if chunks:
 
