@@ -1,23 +1,21 @@
 ```python
+import os
 import streamlit as st
-import html
+import numpy as np
 
 from pypdf import PdfReader
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
 from crewai import Crew, Process
 
-# ------------------------------------------------------------
-# Local project imports
-# ------------------------------------------------------------
 from agents import (
     get_agent_llm,
     create_triage_agent,
     create_compiler_agent,
     create_router_agent,
-    create_automation_agent,
+    create_automation_agent
 )
 
 from tasks import define_workflow_tasks
@@ -35,563 +33,429 @@ st.set_page_config(
 
 
 # ============================================================
-# PROFESSIONAL UI THEME
+# SESSION STATE
 # ============================================================
 
-st.markdown(
-    """
-    <style>
+DEFAULT_STATE = {
+    "chunks": [],
+    "sources": [],
+    "vectorizer": None,
+    "tfidf_matrix": None,
+    "last_output": None,
+    "last_incident": "",
+    "matched_citations": [],
+    "approval_status": "Pending Human Review"
+}
 
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 95%;
-    }
-
-    .header-banner {
-        background: linear-gradient(
-            135deg,
-            #1E3A8A 0%,
-            #0F172A 100%
-        );
-
-        padding: 26px;
-        border-radius: 12px;
-        margin-bottom: 28px;
-
-        box-shadow:
-            0 4px 15px rgba(0,0,0,0.20);
-    }
-
-    .header-banner h1 {
-        color: #FFFFFF !important;
-        font-weight: 800;
-        font-size: 26px !important;
-        margin: 0;
-        text-align: center;
-    }
-
-    .header-banner p {
-        color: #93C5FD !important;
-        margin: 5px 0 12px 0;
-        font-size: 14px;
-        text-align: center;
-    }
-
-    .roster-grid {
-        background: rgba(255,255,255,0.08);
-        border-radius: 6px;
-        padding: 10px;
-        font-size: 13px;
-        color: #F3F4F6;
-        border-left: 4px solid #3B82F6;
-        text-align: center;
-    }
-
-    .premium-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E5E7EB;
-        border-left: 6px solid #2563EB;
-        border-radius: 8px;
-        padding: 22px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        color: #000000 !important;
-    }
-
-    .agent-card {
-        background-color: #F8FAFC;
-        border: 1px solid #CBD5E1;
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 8px;
-        color: #0F172A;
-    }
-
-    .status-card {
-        background-color: #F8FAFC;
-        border: 1px solid #CBD5E1;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-        color: #0F172A;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+for key, value in DEFAULT_STATE.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
+st.title("🤖 SOP-Orchestrator AI")
+
+st.subheader(
+    "Multi-Agent Supply Chain Contingency Planner"
+)
+
+st.caption(
+    "Powered by CrewAI + Gemini 2.5 Flash + Local TF-IDF RAG"
+)
+
 st.markdown(
     """
-    <div class="header-banner">
+**Project Team: AI-Catalysts**
 
-        <h1>
-            🤖 SOP-Orchestrator AI
-        </h1>
+👑 **Project Leader:** Masood Ur Rehman
 
-        <p>
-            Multi-Agent Supply Chain Contingency Planner |
-            Powered by CrewAI + Gemini 2.5 Flash + Local RAG
-        </p>
-
-        <div class="roster-grid">
-
-            👑 <b>Project Leader:</b>
-            Hafiz Masood Ur Rehman
-
-            &nbsp; | &nbsp;
-
-            👥 <b>Team:</b>
-            Fatima Ijaz • Muhammad Aslam • Shakeel Ahmed •
-            Sami Ur Rahman • Muhammad Haroon Jan
-
-        </div>
-
-    </div>
-    """,
-    unsafe_allow_html=True
+👥 **Engineers:** Fatima Ijaz • Muhammad Aslam • Shakeel Ahmed • Sami Ur Rahman • Muhammad Haroon Jan
+"""
 )
 
 
 # ============================================================
-# SESSION STATE INITIALIZATION
+# CORE INFRASTRUCTURE STATUS
 # ============================================================
 
-if "chunks" not in st.session_state:
-    st.session_state.chunks = []
+st.markdown("## ⚙️ Core Infrastructure")
 
-if "sources" not in st.session_state:
-    st.session_state.sources = []
+col1, col2 = st.columns(2)
 
-if "vectorizer" not in st.session_state:
-    st.session_state.vectorizer = None
+with col1:
+    st.success("Swarm Framework: CrewAI Live")
 
-if "tfidf_matrix" not in st.session_state:
-    st.session_state.tfidf_matrix = None
-
-if "last_output" not in st.session_state:
-    st.session_state.last_output = None
-
-if "last_incident" not in st.session_state:
-    st.session_state.last_incident = None
-
-if "matched_citations" not in st.session_state:
-    st.session_state.matched_citations = []
-
-if "approval_status" not in st.session_state:
-    st.session_state.approval_status = "Not Executed"
+with col2:
+    if st.session_state.vectorizer is not None:
+        st.success("Local Matrix Index: ACTIVE")
+    else:
+        st.info("Local Matrix Index: Waiting for SOP")
 
 
 # ============================================================
 # SIDEBAR
 # ============================================================
 
-st.sidebar.markdown("### ⚙️ Core Infrastructure")
+with st.sidebar:
 
-st.sidebar.success("⚡ CrewAI Multi-Agent Framework")
+    st.header("🧠 Agent Architecture")
 
-st.sidebar.info("📌 Local TF-IDF RAG Matrix")
+    st.markdown(
+        """
+### Agent 1
+**Operational Incident Triage**
 
-st.sidebar.info("🧠 Gemini 2.5 Flash")
+Identifies the incident and extracts important operational terms.
 
-st.sidebar.markdown("---")
+### Agent 2
+**SOP Compliance Compiler**
 
-st.sidebar.markdown("### 🤖 Agent Workflow")
+Converts retrieved SOP evidence into an actionable checklist.
 
-st.sidebar.caption("1️⃣ Incident Triage Agent")
-st.sidebar.caption("2️⃣ SOP Compliance Agent")
-st.sidebar.caption("3️⃣ Department Routing Agent")
-st.sidebar.caption("4️⃣ Executive Action Brief Agent")
+### Agent 3
+**Department Routing**
 
-st.sidebar.markdown("---")
+Maps actions to responsible functions.
 
-st.sidebar.markdown("### 🔐 Governance")
+### Agent 4
+**Executive Action Brief**
 
-st.sidebar.warning(
-    "AI recommendations require human review and approval "
-    "before operational release."
+Prepares the final controlled action plan.
+
+---
+
+### 🔐 Governance
+
+**Human-in-the-Loop**
+
+AI recommendations are not automatically approved or executed.
+
+An authorized human must review the action plan and approve release.
+"""
+    )
+
+
+# ============================================================
+# SECTION 1 — SOP INGESTION
+# ============================================================
+
+st.markdown("## 📄 Ingestion Panel")
+
+uploaded_files = st.file_uploader(
+    "Upload one or more approved SOP PDF files",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
+
+if uploaded_files:
+
+    all_chunks = []
+    all_sources = []
+
+    for uploaded_file in uploaded_files:
+
+        try:
+            reader = PdfReader(uploaded_file)
+
+            file_text = ""
+
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                file_text += page_text + "\n"
+
+            file_text = file_text.strip()
+
+            if not file_text:
+                st.warning(
+                    f"Could not extract text from: {uploaded_file.name}"
+                )
+                continue
+
+            words = file_text.split()
+
+            # ------------------------------------------------
+            # Local chunking
+            # ------------------------------------------------
+
+            chunk_size = 500
+
+            file_chunks = [
+                " ".join(words[i:i + chunk_size])
+                for i in range(
+                    0,
+                    len(words),
+                    chunk_size
+                )
+            ]
+
+            for index, chunk in enumerate(file_chunks, start=1):
+
+                all_chunks.append(chunk)
+
+                all_sources.append(
+                    f"{uploaded_file.name} | Segment {index}"
+                )
+
+            size_kb = uploaded_file.size / 1024
+
+            st.info(
+                f"📄 {uploaded_file.name} — "
+                f"{size_kb:.1f} KB — "
+                f"{len(file_chunks)} matrix chunks"
+            )
+
+        except Exception as exc:
+
+            st.error(
+                f"Failed to process {uploaded_file.name}"
+            )
+
+            st.exception(exc)
+
+
+    # --------------------------------------------------------
+    # Build TF-IDF matrix
+    # --------------------------------------------------------
+
+    if all_chunks:
+
+        try:
+
+            vectorizer = TfidfVectorizer(
+                lowercase=True,
+                stop_words="english",
+                ngram_range=(1, 2)
+            )
+
+            tfidf_matrix = vectorizer.fit_transform(
+                all_chunks
+            )
+
+            st.session_state.chunks = all_chunks
+            st.session_state.sources = all_sources
+            st.session_state.vectorizer = vectorizer
+            st.session_state.tfidf_matrix = tfidf_matrix
+
+            # Reset previous workflow
+            st.session_state.last_output = None
+            st.session_state.last_incident = ""
+            st.session_state.matched_citations = []
+            st.session_state.approval_status = (
+                "Pending Human Review"
+            )
+
+            st.success(
+                f"Grounding reference matrix extracted successfully. "
+                f"{len(all_chunks)} chunks indexed."
+            )
+
+        except Exception as exc:
+
+            st.error(
+                "Failed to build the local TF-IDF matrix."
+            )
+
+            st.exception(exc)
+
+
+# ============================================================
+# CURRENT INDEX STATUS
+# ============================================================
+
+if st.session_state.chunks:
+
+    st.caption(
+        f"Deployed Framework Status: "
+        f"{len(st.session_state.chunks)} matrix chunks "
+        f"locked in session memory."
+    )
+
+
+# ============================================================
+# SECTION 2 — INCIDENT INPUT
+# ============================================================
+
+st.markdown("## 💬 Agent Action Controller")
+
+incident_description = st.text_area(
+    "Describe the operational incident",
+    height=160,
+    placeholder=(
+        "Example:\n"
+        "Damaged material was received from a supplier. "
+        "Several cartons were found damaged during warehouse "
+        "receiving inspection."
+    )
 )
 
 
 # ============================================================
-# MAIN TWO-PANEL LAYOUT
+# RUN WORKFLOW BUTTON
 # ============================================================
 
-col1, col2 = st.columns(2, gap="large")
-
-
-# ============================================================
-# LEFT PANEL — DOCUMENT INGESTION
-# ============================================================
-
-with col1:
-
-    st.header("📄 SOP Ingestion Panel")
-
-    uploaded_files = st.file_uploader(
-        "Upload approved operational SOP manuals (PDF):",
-        type=["pdf"],
-        accept_multiple_files=True
-    )
-
-    process_documents = st.button(
-        "⚙️ Process & Index Documents",
-        use_container_width=True
-    )
-
-    if process_documents:
-
-        if not uploaded_files:
-
-            st.warning(
-                "Please upload at least one SOP PDF before indexing."
-            )
-
-        else:
-
-            all_chunks = []
-            all_sources = []
-
-            with st.spinner(
-                "Extracting SOP text and building local retrieval matrix..."
-            ):
-
-                for uploaded_file in uploaded_files:
-
-                    try:
-
-                        reader = PdfReader(uploaded_file)
-
-                        file_text = ""
-
-                        for page_number, page in enumerate(reader.pages):
-
-                            page_text = page.extract_text()
-
-                            if page_text:
-                                file_text += page_text + "\n"
-
-                        if not file_text.strip():
-
-                            st.warning(
-                                f"No readable text found in "
-                                f"{uploaded_file.name}."
-                            )
-
-                            continue
-
-                        # ------------------------------------------------
-                        # 500-word chunking
-                        # ------------------------------------------------
-
-                        words = file_text.split()
-
-                        chunk_size = 500
-
-                        chunks = [
-                            " ".join(
-                                words[index:index + chunk_size]
-                            )
-                            for index in range(
-                                0,
-                                len(words),
-                                chunk_size
-                            )
-                        ]
-
-                        for index, chunk in enumerate(chunks):
-
-                            if chunk.strip():
-
-                                all_chunks.append(chunk)
-
-                                all_sources.append(
-                                    f"{uploaded_file.name} "
-                                    f"(Segment {index + 1})"
-                                )
-
-                    except Exception as exc:
-
-                        st.error(
-                            f"Error processing "
-                            f"{uploaded_file.name}: {exc}"
-                        )
-
-            # ------------------------------------------------------------
-            # Build TF-IDF index
-            # ------------------------------------------------------------
-
-            if all_chunks:
-
-                try:
-
-                    vectorizer = TfidfVectorizer(
-                        stop_words="english"
-                    )
-
-                    tfidf_matrix = vectorizer.fit_transform(
-                        all_chunks
-                    )
-
-                    st.session_state.chunks = all_chunks
-
-                    st.session_state.sources = all_sources
-
-                    st.session_state.vectorizer = vectorizer
-
-                    st.session_state.tfidf_matrix = tfidf_matrix
-
-                    st.session_state.last_output = None
-
-                    st.session_state.last_incident = None
-
-                    st.session_state.matched_citations = []
-
-                    st.session_state.approval_status = (
-                        "Not Executed"
-                    )
-
-                    st.success(
-                        f"Successfully indexed "
-                        f"{len(uploaded_files)} document(s) "
-                        f"into {len(all_chunks)} knowledge segments."
-                    )
-
-                    st.rerun()
-
-                except Exception as exc:
-
-                    st.error(
-                        f"Index construction failed: {exc}"
-                    )
-
-            else:
-
-                st.warning(
-                    "No readable SOP content was available "
-                    "for indexing."
-                )
+run_workflow = st.button(
+    "🚀 Analyze Incident & Build Action Plan",
+    type="primary",
+    use_container_width=True
+)
 
 
 # ============================================================
-# RIGHT PANEL — INCIDENT CONTROLLER
+# VALIDATION
 # ============================================================
 
-with col2:
+if run_workflow:
 
-    st.header("💬 Agent Action Controller")
-
-    incident_description = st.text_area(
-        "Describe the operational incident:",
-        placeholder=(
-            "Example: "
-            "We received a shipment of damaged material from "
-            "a supplier. Several cartons are visibly damaged "
-            "and some material may be unusable. What should we do?"
-        ),
-        height=160
-    )
-
-    trigger_workflow = st.button(
-        "🚀 Trigger Multi-Agent Workflow",
-        use_container_width=True
-    )
-
-    # ------------------------------------------------------------
-    # Current RAG status
-    # ------------------------------------------------------------
-
-    if st.session_state.tfidf_matrix is not None:
-
-        st.success(
-            f"📂 RAG Status: "
-            f"{len(st.session_state.chunks)} SOP segments indexed."
-        )
-
-    else:
+    if not st.session_state.chunks:
 
         st.warning(
-            "📥 RAG Status: No SOP knowledge base indexed."
+            "Please upload and index at least one approved SOP PDF first."
         )
 
-
-# ============================================================
-# WORKFLOW EXECUTION
-# ============================================================
-
-if trigger_workflow:
-
-    # ------------------------------------------------------------
-    # Validate incident
-    # ------------------------------------------------------------
+        st.stop()
 
     if not incident_description.strip():
 
-        st.error(
-            "Please enter an operational incident "
-            "before starting the workflow."
-        )
-
-        st.stop()
-
-    # ------------------------------------------------------------
-    # Validate knowledge base
-    # ------------------------------------------------------------
-
-    if st.session_state.tfidf_matrix is None:
-
-        st.error(
-            "Please process at least one SOP document "
-            "before triggering the workflow."
-        )
-
-        st.stop()
-
-    # ------------------------------------------------------------
-    # RAG RETRIEVAL
-    # ------------------------------------------------------------
-
-    with st.spinner(
-        "Searching approved SOP knowledge base..."
-    ):
-
-        try:
-
-            query_vector = (
-                st.session_state.vectorizer.transform(
-                    [incident_description]
-                )
-            )
-
-            similarities = cosine_similarity(
-                query_vector,
-                st.session_state.tfidf_matrix
-            ).flatten()
-
-            # --------------------------------------------------------
-            # Get top 3 matches
-            # --------------------------------------------------------
-
-            top_indices = np.argsort(
-                similarities
-            )[-3:][::-1]
-
-            context_parts = []
-
-            matched_citations = []
-
-            for index in top_indices:
-
-                score = float(similarities[index])
-
-                # Minimum grounding threshold
-                if score >= 0.05:
-
-                    source = st.session_state.sources[index]
-
-                    chunk = st.session_state.chunks[index]
-
-                    context_parts.append(
-                        f"Source Segment: {source}\n"
-                        f"Similarity Score: {score:.4f}\n"
-                        f"Reference Content:\n{chunk}\n"
-                    )
-
-                    if source not in matched_citations:
-
-                        matched_citations.append(source)
-
-            context_str = "\n\n".join(context_parts)
-
-        except Exception as exc:
-
-            st.error(
-                f"RAG retrieval failed: {exc}"
-            )
-
-            st.stop()
-
-    # ------------------------------------------------------------
-    # Anti-hallucination gate
-    # ------------------------------------------------------------
-
-    if not context_str.strip():
-
-        st.error(
-            "🛑 Grounding Gate Activated"
-        )
-
         st.warning(
-            "No sufficiently relevant SOP reference was found. "
-            "Multi-agent execution has been halted."
-        )
-
-        st.info(
-            "Human review is required because the available "
-            "knowledge base does not provide sufficient evidence."
-        )
-
-        st.session_state.approval_status = (
-            "Halted — Insufficient SOP Evidence"
+            "Please enter an operational incident description."
         )
 
         st.stop()
 
-    # ------------------------------------------------------------
-    # Grounding confirmation
-    # ------------------------------------------------------------
 
-    st.success(
-        f"✅ Grounding reference matrix extracted: "
-        f"{len(matched_citations)} supporting SOP segment(s)."
-    )
+    # ========================================================
+    # LOCAL RAG RETRIEVAL
+    # ========================================================
 
-    with st.expander(
-        "🔎 View Retrieved SOP Evidence",
-        expanded=False
-    ):
-
-        st.text(context_str)
-
-    # ------------------------------------------------------------
-    # Initialize Gemini/CrewAI
-    # ------------------------------------------------------------
-
-    with st.spinner(
-        "Initializing Gemini-powered multi-agent workflow..."
-    ):
-
-        try:
-
-            shared_llm = get_agent_llm()
-
-        except Exception as exc:
-
-            st.error(
-                f"LLM initialization failed: {exc}"
-            )
-
-            st.stop()
-
-    if shared_llm is None:
-
-        st.error(
-            "Gemini LLM could not be initialized. "
-            "Check GEMINI_API_KEY configuration."
-        )
-
-        st.stop()
-
-    # ------------------------------------------------------------
-    # Create agents
-    # ------------------------------------------------------------
+    st.markdown("### 🔎 Local SOP Retrieval")
 
     try:
+
+        query_vec = (
+            st.session_state.vectorizer.transform(
+                [incident_description]
+            )
+        )
+
+        similarities = cosine_similarity(
+            query_vec,
+            st.session_state.tfidf_matrix
+        ).flatten()
+
+        top_count = min(
+            5,
+            len(similarities)
+        )
+
+        top_indices = np.argsort(
+            similarities
+        )[-top_count:][::-1]
+
+
+        # ----------------------------------------------------
+        # Stronger grounding threshold
+        # ----------------------------------------------------
+
+        MIN_SIMILARITY = 0.05
+
+        context_parts = []
+        matched_citations = []
+
+        for idx in top_indices:
+
+            score = float(similarities[idx])
+
+            if score >= MIN_SIMILARITY:
+
+                source_name = (
+                    st.session_state.sources[idx]
+                )
+
+                chunk_text = (
+                    st.session_state.chunks[idx]
+                )
+
+                context_parts.append(
+                    f"""
+SOURCE: {source_name}
+SIMILARITY SCORE: {score:.4f}
+
+SOP CONTENT:
+{chunk_text}
+"""
+                )
+
+                matched_citations.append(
+                    {
+                        "source": source_name,
+                        "score": score
+                    }
+                )
+
+
+        # ----------------------------------------------------
+        # Grounding gate
+        # ----------------------------------------------------
+
+        if not context_parts:
+
+            st.error(
+                "No sufficiently relevant SOP evidence was found "
+                "for this incident."
+            )
+
+            st.info(
+                "The AI workflow has been stopped to prevent "
+                "ungrounded recommendations."
+            )
+
+            st.stop()
+
+
+        context_str = "\n\n".join(
+            context_parts
+        )
+
+        st.session_state.matched_citations = (
+            matched_citations
+        )
+
+        # ----------------------------------------------------
+        # Display retrieved references
+        # ----------------------------------------------------
+
+        with st.expander(
+            "📚 View Retrieved SOP Evidence",
+            expanded=False
+        ):
+
+            for citation in matched_citations:
+
+                st.write(
+                    f"**{citation['source']}**  "
+                    f"(similarity: {citation['score']:.4f})"
+                )
+
+
+        # ====================================================
+        # INITIALIZE CREWAI GEMINI
+        # ====================================================
+
+        st.markdown("### 🧠 Initializing Multi-Agent Workflow")
+
+        shared_llm = get_agent_llm()
+
+        if shared_llm is None:
+            st.stop()
+
+
+        # ====================================================
+        # CREATE AGENTS
+        # ====================================================
 
         triage_agent = create_triage_agent(
             shared_llm
@@ -609,46 +473,24 @@ if trigger_workflow:
             shared_llm
         )
 
-    except Exception as exc:
 
-        st.error(
-            "CrewAI agent initialization failed."
-        )
-
-        st.exception(exc)
-
-        st.stop()
-
-    # ------------------------------------------------------------
-    # Create tasks
-    # ------------------------------------------------------------
-
-    try:
+        # ====================================================
+        # CREATE TASKS
+        # ====================================================
 
         agent_tasks = define_workflow_tasks(
-            triage_agent,
-            compiler_agent,
-            router_agent,
-            automation_agent,
-            incident_description,
-            context_str
+            triage_worker=triage_agent,
+            compiler_worker=compiler_agent,
+            router_worker=router_agent,
+            automation_worker=automation_agent,
+            incident_description=incident_description,
+            context_chunks=context_str
         )
 
-    except Exception as exc:
 
-        st.error(
-            f"Workflow task construction failed: {exc}"
-        )
-
-        st.exception(exc)
-
-        st.stop()
-
-    # ------------------------------------------------------------
-    # Create Crew
-    # ------------------------------------------------------------
-
-    try:
+        # ====================================================
+        # CREATE CREW
+        # ====================================================
 
         operations_crew = Crew(
             agents=[
@@ -665,188 +507,177 @@ if trigger_workflow:
             verbose=True
         )
 
-    except Exception as exc:
 
-        st.error(
-            f"Crew initialization failed: {exc}"
+        # ====================================================
+        # EXECUTE CREW
+        # ====================================================
+
+        st.info(
+            "Grounding evidence verified. "
+            "Initializing Multi-Agent task loop..."
         )
 
-        st.exception(exc)
+        crew_output = operations_crew.kickoff()
 
-        st.stop()
 
-    # ------------------------------------------------------------
-    # Execute Crew
-    # ------------------------------------------------------------
+        # ====================================================
+        # SAVE RESULT
+        # ====================================================
 
-    st.info(
-        "🤖 Multi-Agent workflow is now executing sequentially."
-    )
-
-    try:
-
-        with st.spinner(
-            "Agents are analyzing, compiling, routing, "
-            "and preparing the action brief..."
-        ):
-
-            crew_output = operations_crew.kickoff()
-
-    except Exception as exc:
-
-        st.error(
-            "❌ Multi-Agent workflow execution failed."
+        st.session_state.last_output = str(
+            crew_output
         )
 
-        st.exception(exc)
+        st.session_state.last_incident = (
+            incident_description
+        )
 
         st.session_state.approval_status = (
-            "Execution Failed"
+            "Pending Human Review"
         )
 
+        st.success(
+            "Multi-Agent workflow completed successfully."
+        )
+
+
+    except Exception as exc:
+
+        st.error(
+            "The Multi-Agent workflow failed."
+        )
+
+        st.exception(exc)
+
         st.stop()
-
-    # ------------------------------------------------------------
-    # Save results
-    # ------------------------------------------------------------
-
-    st.session_state.last_output = str(
-        crew_output
-    )
-
-    st.session_state.last_incident = (
-        incident_description
-    )
-
-    st.session_state.matched_citations = (
-        matched_citations
-    )
-
-    st.session_state.approval_status = (
-        "Pending Human Approval"
-    )
 
 
 # ============================================================
-# OUTPUT SECTION
+# SECTION 3 — EXECUTIVE ACTION BRIEF
 # ============================================================
 
 if st.session_state.last_output:
 
     st.markdown("---")
 
-    st.header("📋 Executive Action Map")
-
     st.markdown(
-        '<div class="premium-card">',
-        unsafe_allow_html=True
+        "## 📋 Executive Action Brief"
     )
 
     st.markdown(
         st.session_state.last_output
     )
 
-    st.markdown(
-        "</div>",
-        unsafe_allow_html=True
-    )
 
-    # --------------------------------------------------------
-    # Grounding citations
-    # --------------------------------------------------------
-
-    st.markdown(
-        "### 📌 Verified SOP References"
-    )
+    # ========================================================
+    # SOURCE REFERENCES
+    # ========================================================
 
     if st.session_state.matched_citations:
 
-        for source in st.session_state.matched_citations:
-
-            st.caption(
-                f"✔ {source}"
-            )
-
-    else:
-
-        st.caption(
-            "No citation references available."
+        st.markdown(
+            "### 📚 Verified SOP References"
         )
 
-    # --------------------------------------------------------
-    # Human Approval Gate
-    # --------------------------------------------------------
+        for citation in (
+            st.session_state.matched_citations
+        ):
+
+            st.write(
+                f"- **{citation['source']}** "
+                f"| Similarity: "
+                f"{citation['score']:.4f}"
+            )
+
+
+    # ========================================================
+    # HUMAN APPROVAL GATE
+    # ========================================================
 
     st.markdown("---")
 
-    st.header(
-        "🔐 Mandatory Human-in-the-Loop Approval"
+    st.markdown(
+        "## 🔐 Mandatory Human-in-the-Loop Approval"
     )
 
     st.warning(
         "The AI-generated action plan is advisory. "
-        "No operational workflow should be released "
-        "without authorized human review."
+        "No workflow should be released or executed until "
+        "an authorized human reviews and approves it."
     )
 
-    st.write(
-        f"**Current Status:** "
-        f"{st.session_state.approval_status}"
+
+    approval_check = st.checkbox(
+        "I have reviewed the AI-generated action plan and "
+        "the supporting SOP references."
     )
 
-    approval_confirmation = st.checkbox(
-        "I have reviewed the AI-generated action plan "
-        "and the supporting SOP references."
-    )
 
-    approval_col1, approval_col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with approval_col1:
 
-        approve_workflow = st.button(
+    with col1:
+
+        if st.button(
             "✅ Approve & Release Workflow",
+            disabled=not approval_check,
             use_container_width=True
-        )
-
-    with approval_col2:
-
-        reject_workflow = st.button(
-            "❌ Reject / Request Review",
-            use_container_width=True
-        )
-
-    if approve_workflow:
-
-        if not approval_confirmation:
-
-            st.error(
-                "Please confirm that you have reviewed "
-                "the AI-generated action plan before approval."
-            )
-
-        else:
+        ):
 
             st.session_state.approval_status = (
-                "Approved by Human Reviewer"
+                "APPROVED — Released by Human Reviewer"
             )
 
             st.success(
-                "✅ Workflow approved by human reviewer."
+                "Workflow approved by the human reviewer."
             )
 
-            st.info(
-                "In the production architecture, this approval "
-                "would release the downstream business workflow."
+
+    with col2:
+
+        if st.button(
+            "❌ Reject / Request Review",
+            use_container_width=True
+        ):
+
+            st.session_state.approval_status = (
+                "REJECTED — Human Review Required"
             )
 
-    if reject_workflow:
+            st.error(
+                "Workflow rejected. Human review is required."
+            )
 
-        st.session_state.approval_status = (
-            "Rejected — Human Review Required"
-        )
 
-        st.warning(
-            "Workflow rejected. Human review is required "
-            "before any operational action."
-        )
+    # ========================================================
+    # CURRENT APPROVAL STATUS
+    # ========================================================
+
+    st.markdown("### Current Governance Status")
+
+    status = st.session_state.approval_status
+
+    if status.startswith("APPROVED"):
+
+        st.success(status)
+
+    elif status.startswith("REJECTED"):
+
+        st.error(status)
+
+    else:
+
+        st.info(status)
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.markdown("---")
+
+st.caption(
+    "AI-Catalysts | SOP-Orchestrator AI | "
+    "Human-Governed Multi-Agent Operations"
+)
 ```
