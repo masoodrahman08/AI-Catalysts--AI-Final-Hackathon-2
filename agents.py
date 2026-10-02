@@ -5,11 +5,17 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Initialize the zero-drift Gemini engine model for the swarm workers
 def get_agent_llm():
-    # Check st.secrets first (for Streamlit Cloud deployment)
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-    else:
-        # Fallback to local OS environment variable (for local machine testing)
+    api_key = ""
+    
+    # 🔒 AIRTIGHT VAULT CHECK OVERRIDE (Prevents local StreamlitSecretNotFoundError crashes)
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        # If st.secrets is missing locally, silently fall back to terminal environment variables
+        pass
+
+    if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         
     if not api_key:
