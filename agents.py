@@ -1,48 +1,57 @@
 ```python
 import os
 import streamlit as st
-
 from crewai import Agent, LLM
 
 
 # ============================================================
-# GEMINI LLM CONFIGURATION
+# GEMINI / CREWAI LLM
 # ============================================================
 
 def get_agent_llm():
+    """
+    Create a CrewAI-native Gemini LLM.
 
-    # --------------------------------------------------------
-    # 1. Local machine environment variable
-    # --------------------------------------------------------
+    IMPORTANT:
+    Do not use LangChain's ChatGoogleGenerativeAI here.
+    CrewAI 1.15.x expects its own LLM object or a supported
+    model string.
+    """
+
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
 
-    # --------------------------------------------------------
-    # 2. Streamlit Cloud Secrets fallback
-    # --------------------------------------------------------
+    # Streamlit Cloud / local secrets fallback
     if not api_key:
         try:
-            api_key = st.secrets.get("GEMINI_API_KEY", "").strip()
+            api_key = str(
+                st.secrets.get("GEMINI_API_KEY", "")
+            ).strip()
         except Exception:
             api_key = ""
 
-    # --------------------------------------------------------
-    # 3. Security check
-    # --------------------------------------------------------
     if not api_key:
         st.error(
             "GEMINI_API_KEY was not found. "
-            "Configure it as an environment variable or Streamlit Secret."
+            "Please configure it in Streamlit Secrets or "
+            "your local environment variables."
         )
         return None
 
-    # --------------------------------------------------------
-    # 4. CrewAI-native Gemini LLM
-    # --------------------------------------------------------
-    return LLM(
-        model="gemini/gemini-2.5-flash",
-        api_key=api_key,
-        temperature=0.0
-    )
+    try:
+        llm = LLM(
+            model="gemini/gemini-2.5-flash",
+            api_key=api_key,
+            temperature=0.0
+        )
+
+        return llm
+
+    except Exception as exc:
+        st.error(
+            "CrewAI Gemini LLM initialization failed."
+        )
+        st.exception(exc)
+        return None
 
 
 # ============================================================
@@ -52,21 +61,23 @@ def get_agent_llm():
 def create_triage_agent(llm):
 
     return Agent(
-        role="Incident Triage Agent",
+        role="Operational Incident Triage Agent",
 
         goal=(
-            "Analyze the operational incident description and identify "
-            "the key incident type, affected process, material or asset, "
-            "risk indicators, and search terms required to locate the "
-            "applicable SOP evidence."
+            "Analyze the user's operational incident description "
+            "and identify the incident type, affected process, "
+            "material or asset, operational risk indicators, "
+            "and important search terms required to locate "
+            "the applicable SOP evidence."
         ),
 
         backstory=(
-            "You are the frontline operational triage specialist. "
+            "You are the frontline operational triage specialist "
+            "for a manufacturing and supply-chain organization. "
             "You convert an unstructured operational incident into "
-            "structured and precise information for downstream agents. "
-            "Never invent facts. If information is missing, explicitly "
-            "identify it as unknown."
+            "clear operational information for downstream agents. "
+            "Never invent facts. If information is missing, identify "
+            "it as unknown rather than guessing."
         ),
 
         llm=llm,
@@ -76,26 +87,29 @@ def create_triage_agent(llm):
 
 
 # ============================================================
-# AGENT 2 — SOP COMPLIANCE
+# AGENT 2 — SOP COMPLIANCE COMPILER
 # ============================================================
 
 def create_compiler_agent(llm):
 
     return Agent(
-        role="SOP Compliance Agent",
+        role="SOP Compliance and Action Compiler",
 
         goal=(
-            "Convert the retrieved SOP evidence into a clear, "
+            "Convert the supplied SOP evidence into a clear, "
             "sequential and operationally useful action checklist. "
-            "Every recommendation must be supported by the supplied "
-            "reference material."
+            "Every recommended action must be supported by the "
+            "retrieved SOP reference material."
         ),
 
         backstory=(
             "You are a strict operational compliance specialist. "
             "You work only with the SOP evidence supplied to you. "
-            "Never invent policies, procedures, approval limits, "
-            "safety requirements, or responsibilities."
+            "Never invent company policies, procedures, approval "
+            "limits, safety requirements, responsibilities, or "
+            "documentation requirements. If the SOP evidence does "
+            "not establish something, mark it as requiring "
+            "human verification."
         ),
 
         llm=llm,
@@ -111,20 +125,22 @@ def create_compiler_agent(llm):
 def create_router_agent(llm):
 
     return Agent(
-        role="Department Routing Agent",
+        role="Cross-Functional Department Routing Agent",
 
         goal=(
-            "Map each required action to the appropriate responsible "
-            "department or organizational function based on the "
-            "incident, SOP evidence, and preceding agent outputs."
+            "Map each required operational action to the most "
+            "appropriate responsible department or organizational "
+            "function using the incident information, SOP evidence, "
+            "and preceding agent outputs."
         ),
 
         backstory=(
-            "You are an organizational workflow specialist. "
-            "Identify the most appropriate responsible function for "
-            "each action. Do not assume responsibility when it cannot "
-            "be verified. Mark uncertain assignments as "
-            "Human Verification Required."
+            "You are an organizational workflow specialist with "
+            "experience in manufacturing, warehouse, quality, "
+            "procurement and logistics operations. Identify the "
+            "most appropriate responsible function for each action. "
+            "Do not assume responsibility when it cannot be verified. "
+            "Mark uncertain assignments as 'Human Verification Required'."
         ),
 
         llm=llm,
@@ -140,11 +156,11 @@ def create_router_agent(llm):
 def create_automation_agent(llm):
 
     return Agent(
-        role="Executive Action Brief Agent",
+        role="Executive Action Brief and Workflow Preparation Agent",
 
         goal=(
             "Combine the verified incident analysis, SOP action "
-            "checklist, department responsibilities, and source "
+            "checklist, department responsibilities and source "
             "references into a concise Executive Action Brief "
             "prepared for human review and approval."
         ),
@@ -154,7 +170,8 @@ def create_automation_agent(llm):
             "Your output must clearly distinguish verified SOP-based "
             "actions from information requiring human verification. "
             "The final recommendation must never bypass the mandatory "
-            "human approval gate."
+            "human approval gate. You prepare the workflow for review; "
+            "you do not independently authorize or execute it."
         ),
 
         llm=llm,
