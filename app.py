@@ -1,196 +1,436 @@
-import streamlit as st
-import os
 import collections
-from google import genai
-from google.genai import types
+import re
+
+import numpy as np
+import streamlit as st
+
 from pypdf import PdfReader
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 
-# 🔑 SECURE METADATA ENVIRONMENTAL ROUTING
-if "GEMINI_API_KEY" in st.secrets:
-    GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
-else:
-    GEMINI_KEY = ""
+from crewai import Crew, Process
 
-# 1. Page Configuration & Setup
-st.set_page_config(
-    page_title="AI Operations & Supply Chain Knowledge Assistant",
-    page_icon="🤖",
-    layout="wide"
+from agents import (
+    get_agent_llm,
+    create_triage_agent,
+    create_compiler_agent,
+    create_router_agent,
+    create_automation_agent,
 )
 
-# --- PREMIUM LUXURY BRAND CSS INJECTION MATRIX ---
-st.markdown("""
+from tasks import define_workflow_tasks
+
+
+# ============================================================
+# APPLICATION CONFIGURATION
+# ============================================================
+
+st.set_page_config(
+    page_title="SOP-Orchestrator AI",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+APP_TITLE = "SOP-Orchestrator AI"
+APP_SUBTITLE = (
+    "Multi-Agent Supply Chain Contingency Planner"
+)
+
+MODEL_DISPLAY_NAME = "Gemini 3.8 Flash"
+
+CHUNK_SIZE = 500
+TOP_K = 3
+SIMILARITY_THRESHOLD = 0.05
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "sop_chunks" not in st.session_state:
+    st.session_state.sop_chunks = []
+
+if "sop_sources" not in st.session_state:
+    st.session_state.sop_sources = []
+
+if "retrieved_context" not in st.session_state:
+    st.session_state.retrieved_context = []
+
+if "incident" not in st.session_state:
+    st.session_state.incident = ""
+
+if "workflow_output" not in st.session_state:
+    st.session_state.workflow_output = None
+
+if "workflow_approved" not in st.session_state:
+    st.session_state.workflow_approved = False
+
+if "workflow_rejected" not in st.session_state:
+    st.session_state.workflow_rejected = False
+
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
+
+st.markdown(
+    """
     <style>
-    /* Global Page Structure and Typography */
-    .main .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 94%; }
-    body { font-family: 'Inter', -apple-system, sans-serif !important; }
-    
-    /* Obsidian Executive Header Banner */
-    .premium-banner {
-        background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
-        padding: 30px; border-radius: 16px; margin-bottom: 32px;
-        border: 1px solid #334155;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+
+    .main-title {
+        font-size: 2.4rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
     }
-    .premium-banner h1 { color: #FFFFFF !important; font-weight: 800 !important; font-size: 28px !important; margin: 0 0 6px 0 !important; letter-spacing: -0.5px; text-align: center !important; }
-    .premium-banner .banner-sub { color: #94A3B8 !important; font-size: 14px !important; margin: 0 0 20px 0 !important; font-weight: 400; text-align: center !important; }
-    
-    /* Neon Team Badge */
-    .team-badge { background: linear-gradient(90deg, #38BDF8, #818CF8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; letter-spacing: 0.5px; }
-    
-    /* Roster Two-Line Layout Container Modules */
-    .roster-box { background: rgba(30, 41, 59, 0.5); padding: 16px 20px; border-radius: 10px; border: 1px solid #334155; max-width: 800px; margin: 0 auto; }
-    .roster-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
-    .roster-row:first-child { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
-    .roster-label { color: #94A3B8; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-    
-    /* Leader Gold Shield Badge */
-    .badge-leader { background: linear-gradient(135deg, #FEF08A 0%, #EAB308 100%); color: #451A03 !important; font-weight: 700; padding: 4px 14px; border-radius: 6px; font-size: 13px; box-shadow: 0 2px 4px rgba(234, 179, 8, 0.2); }
-    
-    /* Member Emerald Ice Badges */
-    .badge-member { background: linear-gradient(135deg, #D1FAE5 0%, #10B981 100%); color: #064E3B !important; font-weight: 600; padding: 4px 12px; border-radius: 6px; font-size: 12px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.15); display: inline-block; }
-    
-    /* Interactive Column Layout Headers */
-    h2 { color: #1E3A8A !important; font-weight: 700 !important; font-size: 20px !important; border-bottom: 2px solid #E2E8F0; padding-bottom: 8px; margin-bottom: 20px; }
-    
-    /* Grounded Output Display Frame */
-    .premium-response { background-color: #FFFFFF; border: 1px solid #E2E8F0; border-left: 5px solid #2563EB; border-radius: 8px; padding: 20px; margin-top: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-    .premium-citation { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 14px; margin-top: 8px; font-size: 13px; color: #475569; }
+
+    .main-subtitle {
+        font-size: 1.15rem;
+        color: #666666;
+        margin-bottom: 1.2rem;
+    }
+
+    .status-card {
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 12px;
+        background-color: #fafafa;
+    }
+
+    .workflow-card {
+        border: 1px solid #d9d9d9;
+        border-radius: 12px;
+        padding: 20px;
+        background-color: #ffffff;
+        margin-top: 15px;
+    }
+
+    .approval-card {
+        border: 2px solid #999999;
+        border-radius: 12px;
+        padding: 20px;
+        background-color: #fafafa;
+        margin-top: 20px;
+    }
+
+    .small-label {
+        font-size: 0.85rem;
+        color: #666666;
+    }
+
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
+)
 
-# Render Centered Obsidian Executive Header Banner with Two-Line Roster
-st.markdown("""
-    <div class="premium-banner">
-        <h1>🤖 AI Operations & Supply Chain Knowledge Assistant</h1>
-        <div class="banner-sub">Engineered by Team: <span class="team-badge">AI-Catalysts- Hackathon</span></div>
-        <div class="roster-box">
-            <div class="roster-row">
-                <span class="roster-label">👑 Project Leader:</span>
-                <span class="badge-leader">Hafiz Masood Ur Rehman</span>
-            </div>
-            <div class="roster-row">
-                <span class="roster-label">👥 Team Members:</span>
-                <span class="badge-member">Fatima Ijaz</span>
-                <span class="badge-member">Muhammad Aslam</span>
-                <span class="badge-member">Shakeel Ahmed</span>
-                <span class="badge-member">Sami Ur Rahman</span>
-                <span class="badge-member">Muhammad Haroon Jan</span>
-            </div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
 
-# 2. Initialize Session State Variables
-if "chunks" not in st.session_state:
-    st.session_state.chunks = []
-if "sources" not in st.session_state:
-    st.session_state.sources = []
-if "vectorizer" not in st.session_state:
-    st.session_state.vectorizer = None
-if "tfidf_matrix" not in st.session_state:
-    st.session_state.tfidf_matrix = None
-if "keyword_frequencies" not in st.session_state:
-    st.session_state.keyword_frequencies = {}
+# ============================================================
+# HEADER
+# ============================================================
 
-# 3. Sidebar Configuration & Live Frequency Monitor
-st.sidebar.markdown("### ⚙️ Core Infrastructure")
-st.sidebar.success("⚡ Gemini 3.6 Flash Engine: ACTIVE")
-st.sidebar.info("📌 Knowledge Index Bank: LOCAL RAM")
+st.markdown(
+    '<div class="main-title">🤖 SOP-Orchestrator AI</div>',
+    unsafe_allow_html=True
+)
 
-# --- LIVE SIDEBAR METRICS PORTAL ---
-if st.session_state.keyword_frequencies:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 Document Word Frequencies")
-    for doc_name, freq_list in st.session_state.keyword_frequencies.items():
-        short_name = doc_name if len(doc_name) < 25 else f"{doc_name[:22]}..."
-        with st.sidebar.expander(f"📁 {short_name}", expanded=True):
-            for word, count in freq_list:
-                st.caption(f"🔹 **{word.upper()}**: repeated {count} times")
+st.markdown(
+    '<div class="main-subtitle">'
+    'Multi-Agent Supply Chain Contingency Planner'
+    '</div>',
+    unsafe_allow_html=True
+)
 
-st.sidebar.markdown("---")
-st.sidebar.caption("🔒 Corporate guardrails are live. Anti-hallucination tracking activated.")
+st.write(
+    "Converts operational incidents into SOP-grounded "
+    "action plans using Local RAG, CrewAI multi-agent "
+    "workflow and mandatory human approval."
+)
 
-# --- DECOUPLED FLATTENED PARSING ENGINE ---
-def parse_and_chunk_pdfs(uploaded_files):
+st.divider()
+
+st.markdown(
+    """
+    **Project Leader:** Masood Ur Rehman
+
+    **Technology:** CrewAI + Gemini 3.8 Flash + Local TF-IDF RAG
+
+    **Cost Model:** Free-tier / no paid API dependency
+    """
+)
+
+
+# ============================================================
+# SIDEBAR — WORKFLOW STATUS
+# ============================================================
+
+with st.sidebar:
+
+    st.header("⚙️ System Configuration")
+
+    st.markdown("### Workflow")
+
+    workflow_steps = [
+        "Upload approved SOP",
+        "Describe incident",
+        "Retrieve evidence",
+        "Triage incident",
+        "Compile SOP actions",
+        "Route departments",
+        "Prepare executive brief",
+        "Human approval",
+    ]
+
+    for index, step in enumerate(workflow_steps, start=1):
+        st.write(f"**{index}.** {step}")
+
+    st.divider()
+
+    st.caption(
+        "The AI prepares a grounded workflow for human review. "
+        "It does not independently execute business transactions."
+    )
+
+    st.divider()
+
+    st.markdown("### 💰 Cost Control")
+
+    st.caption(
+        "Local PDF processing and TF-IDF retrieval require "
+        "no external API calls."
+    )
+
+    st.caption(
+        "Only the four CrewAI agents use Gemini."
+    )
+
+    st.caption(
+        "Agents are configured for one-pass execution and "
+        "no automatic agent retries."
+    )
+
+
+# ============================================================
+# SECTION 1 — SOP UPLOAD
+# ============================================================
+
+st.header("1. 📚 Upload Approved SOP")
+
+uploaded_files = st.file_uploader(
+    "Upload one or more approved SOP PDF files",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help=(
+        "The system extracts text locally and creates a "
+        "TF-IDF searchable knowledge base."
+    )
+)
+
+# SAFEGUARD GUARDRAIL: Reset context loops if uploader is cleared by user
+if not uploaded_files:
+    if st.session_state.sop_chunks or st.session_state.sop_sources:
+        st.session_state.sop_chunks = []
+        st.session_state.sop_sources = []
+        st.session_state.retrieved_context = []
+        st.session_state.workflow_output = None
+        st.session_state.workflow_approved = False
+        st.session_state.workflow_rejected = False
+
+
+def split_text_into_chunks(text, chunk_size=500):
+
+    words = text.split()
+
+    chunks = []
+
+    for start in range(0, len(words), chunk_size):
+        chunk = " ".join(
+            words[start:start + chunk_size]
+        )
+
+        if chunk.strip():
+            chunks.append(chunk.strip())
+
+    return chunks
+
+
+def build_local_knowledge_base(files):
+
     all_chunks = []
     all_sources = []
-    extracted_freq_dict = {}
-    
-    STOP_WORDS = set([
-        "the", "and", "a", "of", "to", "in", "is", "for", "that", "by", "on", "with", 
-        "as", "an", "at", "be", "this", "from", "it", "are", "or", "was", "will", "shall",
-        "must", "should", "under", "within", "strict", "exact", "any", "all", "each", "based"
-    ])
-    
-    for uploaded_file in uploaded_files:
-        try:
-            reader = PdfReader(uploaded_file)
-            file_text = ""
-            
-            for page in reader.pages:
-                extracted_text = page.extract_text()
-                if extracted_text:
-                    file_text += extracted_text + "\n"
-            
-            lower_text = file_text.lower()
-            cleaned_text = "".join([c if c.isalnum() or c.isspace() else " " for c in lower_text])
-            
-            filtered_words = []
-            for word in cleaned_text.split():
-                if word not in STOP_WORDS and len(word) > 2 and not word.isdigit():
-                    filtered_words.append(word)
-            
-            word_counts = collections.Counter(filtered_words)
-            extracted_freq_dict[uploaded_file.name] = word_counts.most_common(12)
-            
-            chunk_size = 500
-            words = file_text.split()
-            chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
-            
-            for idx, chunk in enumerate(chunks):
-                if chunk.strip():
-                    all_chunks.append(chunk)
-                    all_sources.append(f"{uploaded_file.name} (Segment {idx+1})")
-                    
-        except Exception as file_error:
-            st.error(f"Error parsing file execution branch {uploaded_file.name}: {file_error}")
-            
-    return all_chunks, all_sources, extracted_freq_dict
 
-# --- DECOUPLED FLATTENED RAG ROUTING CORE (FULLY ACCURATE & REVERIFIED) ---
-def run_search_pipeline(user_query):
-    if st.session_state.tfidf_matrix is None or len(st.session_state.chunks) == 0:
-        st.error("Please upload and index documents on the left before running search queries.")
-        return
-    if not GEMINI_KEY:
-        st.error("🔒 Security Error: `GEMINI_API_KEY` is completely missing from your Streamlit Secrets vault console.")
-        return
-        
-    with st.spinner("Scanning matrix indexes and compiling response context..."):
-        query_vec = st.session_state.vectorizer.transform([user_query])
-        similarities = cosine_similarity(query_vec, st.session_state.tfidf_matrix).flatten()
-        
-        top_indices = np.argsort(similarities)[-3:][::-1]
-        
-        context_str = ""
-        matched_sources = []
-        for idx in top_indices:
-            if similarities[idx] > 0.05:
-                context_str += f"Source: {st.session_state.sources[idx]}\nContent: {st.session_state.chunks[idx]}\n\n"
-                current_source = st.session_state.sources[idx]
-                if current_source not in matched_sources:
-                    matched_sources.append(current_source)
-        
-        if not context_str.strip():
-            st.warning("No relevant document references matched your query parameters.")
-            context_str = "No reference text available."
-        
-        system_prompt = "You are an expert Operations and Supply Chain Knowledge Assistant.\nAnswer user questions accurately based ONLY on the operational text reference provided below.\nIf the answer cannot be confidently verified from the text, state exactly: \n'Information not found in the uploaded operational knowledge base.' Do not make up answers.\n\n--- START REFERENCE TEXT ---\n" + context_str + "\n--- END REFERENCE TEXT ---"
-        
+    for uploaded_file in files:
+
         try:
-            client = genai.Client(api_key=GEMINI_KEY)
-            config_setup = types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.0)
+
+            reader = PdfReader(uploaded_file)
+
+            full_text = []
+
+            for page_number, page in enumerate(
+                reader.pages,
+                start=1
+            ):
+
+                try:
+                    page_text = page.extract_text() or ""
+
+                except Exception:
+                    page_text = ""
+
+                if page_text.strip():
+                    full_text.append(
+                        f"[Page {page_number}]\n"
+                        f"{page_text.strip()}"
+                    )
+
+            combined_text = "\n\n".join(full_text)
+
+            file_chunks = split_text_into_chunks(
+                combined_text,
+                CHUNK_SIZE
+            )
+
+            for chunk_number, chunk in enumerate(
+                file_chunks,
+                start=1
+            ):
+
+                all_chunks.append(chunk)
+
+                all_sources.append(
+                    {
+                        "file": uploaded_file.name,
+                        "chunk": chunk_number,
+                    }
+                )
+
+        except Exception as exc:
+
+            st.error(
+                f"Could not read {uploaded_file.name}: {exc}"
+            )
+
+    return all_chunks, all_sources
+
+
+if uploaded_files:
+
+    if st.button(
+        "🔄 Build Local SOP Knowledge Base",
+        type="primary"
+    ):
+
+        with st.spinner(
+            "Extracting SOP text and building local TF-IDF index..."
+        ):
+
+            chunks, sources = build_local_knowledge_base(
+                uploaded_files
+            )
+
+            st.session_state.sop_chunks = chunks
+            st.session_state.sop_sources = sources
+            st.session_state.workflow_output = None
+            st.session_state.workflow_approved = False
+            st.session_state.workflow_rejected = False
+
+        if chunks:
+
+            st.success(
+                f"Knowledge base ready: "
+                f"{len(uploaded_files)} SOP file(s), "
+                f"{len(chunks)} searchable chunk(s)."
+            )
+
+        else:
+
+            st.error(
+                "No readable text was extracted from the uploaded SOP files."
+            )
+
+
+if st.session_state.sop_chunks:
+
+    st.success(
+        f"✅ Local SOP knowledge base active — "
+        f"{len(st.session_state.sop_chunks)} chunks"
+    )
+
+
+# ============================================================
+# SECTION 2 — INCIDENT
+# ============================================================
+
+st.header("2. 🚨 Describe Operational Incident")
+
+incident = st.text_area(
+    "Describe the operational situation",
+    value=st.session_state.incident,
+    height=150,
+    placeholder=(
+        "Example:\n"
+        "During manual inspection of an incoming marine cargo "
+        "container, our operator discovered that the high-security "
+        "bolt seal shows physical deformation and un-logged "
+        "tracking marks. What are the applicable procedures?"
+    )
+)
+
+st.session_state.incident = incident
+
+
+# ============================================================
+# LOCAL RAG RETRIEVAL
+# ============================================================
+
+def retrieve_sop_evidence(
+    query,
+    chunks,
+    sources,
+    top_k=3,
+    threshold=0.05
+):
+
+    if not query.strip():
+        return []
+
+    if not chunks:
+        return []
+
+    vectorizer = TfidfVectorizer(
+        lowercase=True,
+        stop_words="english",
+        ngram_range=(1, 2)
+    )
+
+    try:
+
+        matrix = vectorizer.fit_transform(chunks)
+
+        query_vector = vectorizer.transform([query])
+
+        similarities = cosine_similarity(
+            query_vector,
+            matrix
+        )[0]
+
+    except Exception:
+        return []
+
+    ranked_indices = np.argsort(
+        similarities
+    )[::-1]
+
+    results = []
+
+    for index in ranked_indices[:top_k]:
+
+        score = float(similarities[index])
+
+        if score < threshold:
+            continue
+
+        results.append(
+            {
