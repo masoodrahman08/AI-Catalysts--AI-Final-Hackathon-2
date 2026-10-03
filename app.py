@@ -406,25 +406,30 @@ def retrieve_sop_evidence(
     )
 
     try:
-
         matrix = vectorizer.fit_transform(chunks)
-
         query_vector = vectorizer.transform([query])
-
-        similarities = cosine_similarity(
-            query_vector,
-            matrix
-        )[0]
-
+        # 💎 FIX: Explicitly extract and flatten the similarity array securely
+        similarities = np.array(cosine_similarity(query_vector, matrix)).flatten()
     except Exception:
         return []
 
-    ranked_indices = np.argsort(
-        similarities
-    )[::-1]
-
+    ranked_indices = np.argsort(similarities)[::-1]
     results = []
 
+    for index in ranked_indices[:top_k]:
+        score = float(similarities[index])
+        if score < threshold:
+            continue
+
+        results.append(
+            {
+                "chunk": chunks[index],
+                "source": sources[index],
+                "score": score,
+            }
+        )
+
+    return results
     for index in ranked_indices[:top_k]:
 
         score = float(similarities[index])
