@@ -1,4 +1,4 @@
-```python
+
 import os
 import streamlit as st
 from crewai import Agent, LLM
@@ -15,11 +15,11 @@ def get_agent_llm():
     """
     Create the CrewAI-native Gemini LLM.
 
-    The API key is read from:
-    1. Environment variable GEMINI_API_KEY
+    API key sources:
+    1. GEMINI_API_KEY environment variable
     2. Streamlit Secrets
 
-    No API key is hard-coded in the application.
+    No API key is stored in source code.
     """
 
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -54,36 +54,35 @@ def get_agent_llm():
 
 
 # ============================================================
-# COMMON AGENT SETTINGS
+# FREE-TIER AGENT SETTINGS
 # ============================================================
 
 FREE_TIER_SETTINGS = {
-    # One main execution cycle per agent.
+    # One main reasoning/execution iteration.
     "max_iter": 1,
 
-    # Prevent unnecessary automatic agent retries.
+    # Prevent automatic agent retries.
     "max_retry_limit": 0,
 
-    # Agents must not delegate to other agents.
+    # Agents cannot delegate to other agents.
     "allow_delegation": False,
 
-    # Keep the public application clean.
+    # Keep public application output clean.
     "verbose": False,
 
-    # We are not using tools in this MVP.
+    # Allow CrewAI caching.
     "cache": True,
 
     # Conservative request rate.
     "max_rpm": 1,
 
-    # Keep context management enabled.
+    # Respect context limits.
     "respect_context_window": True,
 }
 
 
 # ============================================================
-# AGENT 1
-# OPERATIONAL INCIDENT TRIAGE
+# AGENT 1 — INCIDENT TRIAGE
 # ============================================================
 
 def create_triage_agent(llm):
@@ -92,16 +91,16 @@ def create_triage_agent(llm):
         role="Operational Incident Triage Agent",
 
         goal=(
-            "Analyze the user's operational incident and extract "
-            "the essential facts, affected process, incident type, "
-            "and useful search terms without inventing information."
+            "Analyze the operational incident and extract the "
+            "essential facts, affected process, incident type, "
+            "and useful technical search terms without inventing "
+            "information."
         ),
 
         backstory=(
             "You are the first-line operational intake specialist. "
-            "Your responsibility is to structure an unstructured "
-            "incident description so that downstream SOP analysis "
-            "can be performed accurately. "
+            "You structure an unstructured incident description "
+            "for downstream SOP analysis. "
             "Never invent facts, procedures, responsibilities, "
             "approvals, or decisions."
         ),
@@ -112,8 +111,7 @@ def create_triage_agent(llm):
 
 
 # ============================================================
-# AGENT 2
-# SOP COMPLIANCE AND ACTION COMPILER
+# AGENT 2 — SOP COMPLIANCE
 # ============================================================
 
 def create_compiler_agent(llm):
@@ -128,10 +126,10 @@ def create_compiler_agent(llm):
 
         backstory=(
             "You are a strict SOP compliance specialist. "
-            "You work only with the SOP evidence supplied to you. "
-            "Do not create policies, procedures, approvals, "
-            "responsibilities, or requirements that are absent "
-            "from the evidence."
+            "You work only with the evidence supplied from the "
+            "approved SOP knowledge base. "
+            "Do not create unsupported procedures, policies, "
+            "approvals, responsibilities, or requirements."
         ),
 
         llm=llm,
@@ -140,8 +138,7 @@ def create_compiler_agent(llm):
 
 
 # ============================================================
-# AGENT 3
-# CROSS-FUNCTIONAL ROUTING
+# AGENT 3 — DEPARTMENT ROUTING
 # ============================================================
 
 def create_router_agent(llm):
@@ -156,10 +153,10 @@ def create_router_agent(llm):
 
         backstory=(
             "You are an enterprise workflow routing specialist. "
-            "You examine the approved action checklist and identify "
-            "responsible functions. If the evidence does not "
-            "support a responsibility assignment, explicitly mark "
-            "it as Human Verification Required rather than guessing."
+            "Assign responsibilities only when supported by the "
+            "available information. "
+            "If responsibility cannot be established confidently, "
+            "mark it as Human Verification Required."
         ),
 
         llm=llm,
@@ -168,8 +165,7 @@ def create_router_agent(llm):
 
 
 # ============================================================
-# AGENT 4
-# EXECUTIVE ACTION BRIEF
+# AGENT 4 — EXECUTIVE ACTION BRIEF
 # ============================================================
 
 def create_automation_agent(llm):
@@ -185,9 +181,9 @@ def create_automation_agent(llm):
 
         backstory=(
             "You are a corporate operations documentation specialist. "
-            "Your output must clearly identify the incident, applicable "
-            "SOP actions, responsible functions, required documents, "
-            "decision points and human approval requirement. "
+            "Clearly identify the incident, applicable SOP actions, "
+            "responsible functions, required documents, decision "
+            "points and human approval requirement. "
             "You prepare recommendations only. "
             "You never claim that a real business transaction "
             "has been executed."
@@ -196,4 +192,3 @@ def create_automation_agent(llm):
         llm=llm,
         **FREE_TIER_SETTINGS
     )
-```
