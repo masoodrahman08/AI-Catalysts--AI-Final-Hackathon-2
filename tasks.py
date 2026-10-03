@@ -26,7 +26,7 @@ def define_workflow_tasks(
 
             f"INCIDENT:\n{incident_description}\n\n"
 
-            "Extract only the following:\n"
+            "Extract only:\n"
             "1. Incident type\n"
             "2. Affected process, material or activity\n"
             "3. Important operational facts\n"
@@ -67,9 +67,8 @@ def define_workflow_tasks(
             "- Do not invent safety requirements.\n"
             "- Do not invent approvals.\n"
             "- Do not invent responsibilities.\n"
-            "- Clearly state when the available SOP evidence "
-            "is insufficient.\n"
-            "- Keep the actions practical and sequential."
+            "- Clearly state when evidence is insufficient.\n"
+            "- Keep actions practical and sequential."
         ),
 
         expected_output=(
@@ -100,7 +99,7 @@ def define_workflow_tasks(
             "- Human Verification Required if responsibility "
             "cannot be established from the available information.\n\n"
 
-            "Do not invent an organizational responsibility."
+            "Do not invent organizational responsibility."
         ),
 
         expected_output=(
@@ -125,7 +124,7 @@ def define_workflow_tasks(
             "Prepare the final Executive Action Brief using "
             "the validated outputs from the previous agents.\n\n"
 
-            "Include these sections:\n"
+            "Include:\n"
             "1. Incident Summary\n"
             "2. Applicable SOP Evidence\n"
             "3. Required Actions\n"
