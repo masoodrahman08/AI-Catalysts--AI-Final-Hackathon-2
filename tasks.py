@@ -1,4 +1,4 @@
-```python
+
 from crewai import Task
 
 
@@ -158,4 +158,3 @@ def define_workflow_tasks(
         task_3_route,
         task_4_automate
     ]
-```
