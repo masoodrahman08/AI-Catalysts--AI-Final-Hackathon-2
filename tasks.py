@@ -1,160 +1,44 @@
+from crewai import Task, Crew, Process
+from agents import create_policy_analyst, create_operations_orchestrator
 
-from crewai import Task
+def run_sop_multi_agent_workflow(user_incident: str, sop_context: str, api_key: str, model_name: str = "groq/openai/gpt-oss-120b"):
+    """Executes the two-agent sequential workflow."""
+    
+    policy_analyst = create_policy_analyst(api_key, model_name)
+    operations_orchestrator = create_operations_orchestrator(api_key, model_name)
 
-
-# ============================================================
-# WORKFLOW TASK DEFINITIONS
-# ============================================================
-
-def define_workflow_tasks(
-    triage_worker,
-    compiler_worker,
-    router_worker,
-    automation_worker,
-    incident_description,
-    context_chunks
-):
-
-    # ========================================================
-    # TASK 1 — INCIDENT TRIAGE
-    # ========================================================
-
-    task_1_triage = Task(
-
+    # Task 1: Compliance Analysis
+    policy_task = Task(
         description=(
-            "Analyze the following operational incident.\n\n"
-
-            f"INCIDENT:\n{incident_description}\n\n"
-
-            "Extract only:\n"
-            "1. Incident type\n"
-            "2. Affected process, material or activity\n"
-            "3. Important operational facts\n"
-            "4. Useful technical/search terms\n\n"
-
-            "Do not invent information that is not present "
-            "in the incident description."
+            f"Examine the user incident report:\n'{user_incident}'\n\n"
+            f"Using the retrieved SOP context below:\n{sop_context}\n\n"
+            "1. Identify the exact SOP guidelines applicable to this situation.\n"
+            "2. Note required emergency/compliance actions and cite the specific source document name.\n"
+            "3. Highlight potential risks if compliance steps are delayed."
         ),
-
-        expected_output=(
-            "A concise structured incident summary containing "
-            "incident type, affected process/material/activity, "
-            "key facts and search terms."
-        ),
-
-        agent=triage_worker
+        expected_output="A structured policy report containing identified SOP rules, citations, and risk factors.",
+        agent=policy_analyst
     )
 
-
-    # ========================================================
-    # TASK 2 — SOP COMPLIANCE
-    # ========================================================
-
-    task_2_compile = Task(
-
+    # Task 2: Action Plan Synthesis
+    orchestration_task = Task(
         description=(
-            "Review the incident information from the previous "
-            "agent together with the retrieved SOP evidence below.\n\n"
-
-            "RETRIEVED SOP EVIDENCE:\n"
-            f"{context_chunks}\n\n"
-
-            "Create a numbered operational action checklist.\n\n"
-
-            "STRICT RULES:\n"
-            "- Use only the supplied SOP evidence.\n"
-            "- Do not invent procedures.\n"
-            "- Do not invent safety requirements.\n"
-            "- Do not invent approvals.\n"
-            "- Do not invent responsibilities.\n"
-            "- Clearly state when evidence is insufficient.\n"
-            "- Keep actions practical and sequential."
+            "Review the compliance analysis provided by the Policy Analyst.\n"
+            "Create a comprehensive operational execution package including:\n"
+            "1. Executive Incident Summary (2-3 sentences)\n"
+            "2. Prioritized Action Checklist (High / Medium / Low priority tasks)\n"
+            "3. Pre-filled Communication Draft (e.g., supplier claim email, maintenance ticket, or incident log)\n"
+            "4. Human-in-the-Loop Status Flag: Mark clearly as 'PENDING MANAGER APPROVAL'."
         ),
-
-        expected_output=(
-            "A concise numbered SOP-grounded operational action "
-            "checklist. Unsupported actions must not be presented "
-            "as confirmed SOP requirements."
-        ),
-
-        agent=compiler_worker,
-
-        context=[task_1_triage]
+        expected_output="A clean, formatted markdown response containing the summary, prioritized checklist, ready-to-send draft artifact, and approval flag.",
+        agent=operations_orchestrator
     )
 
-
-    # ========================================================
-    # TASK 3 — DEPARTMENT ROUTING
-    # ========================================================
-
-    task_3_route = Task(
-
-        description=(
-            "Review the SOP action checklist produced by the "
-            "previous agent.\n\n"
-
-            "For every action identify:\n"
-            "- Responsible department or function\n"
-            "- Required supporting activity\n"
-            "- Human Verification Required if responsibility "
-            "cannot be established from the available information.\n\n"
-
-            "Do not invent organizational responsibility."
-        ),
-
-        expected_output=(
-            "A concise action-to-department routing matrix "
-            "showing action, responsible function and any "
-            "human verification requirement."
-        ),
-
-        agent=router_worker,
-
-        context=[task_2_compile]
+    crew = Crew(
+        agents=[policy_analyst, operations_orchestrator],
+        tasks=[policy_task, orchestration_task],
+        process=Process.sequential,
+        verbose=True
     )
 
-
-    # ========================================================
-    # TASK 4 — EXECUTIVE ACTION BRIEF
-    # ========================================================
-
-    task_4_automate = Task(
-
-        description=(
-            "Prepare the final Executive Action Brief using "
-            "the validated outputs from the previous agents.\n\n"
-
-            "Include:\n"
-            "1. Incident Summary\n"
-            "2. Applicable SOP Evidence\n"
-            "3. Required Actions\n"
-            "4. Responsible Functions\n"
-            "5. Required Documents or Records\n"
-            "6. Decision / Approval Point\n"
-            "7. Human Approval Requirement\n\n"
-
-            "Important:\n"
-            "- Do not claim that a transaction was executed.\n"
-            "- Do not claim that an approval has already occurred.\n"
-            "- Clearly distinguish SOP-supported actions from "
-            "items requiring human verification.\n"
-            "- The final output is a recommendation for human review."
-        ),
-
-        expected_output=(
-            "A concise executive operational action brief "
-            "ready for human review and approval."
-        ),
-
-        agent=automation_worker,
-
-        context=[task_3_route]
-    )
-
-
-    return [
-        task_1_triage,
-        task_2_compile,
-        task_3_route,
-        task_4_automate
-    ]
+    return crew.kickoff()
